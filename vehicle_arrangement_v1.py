@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import random
 from math import ceil, floor
 import matplotlib.animation as animation
-
+from matplotlib import colors
 from win32comext.adsi.demos.scp import verbose
 
 # -----------------------------
@@ -11,7 +11,7 @@ from win32comext.adsi.demos.scp import verbose
 # -----------------------------
 cell_size = 0.1                 # meters per cell
 road_length_m = 200.0           # simulation length in meters
-lane_width = 2                # meters
+lane_width = 3.5                # meters
 number_lanes = 4
 road_width_m = number_lanes*lane_width              # meters (example)
 W_cells = int(round(road_width_m / cell_size))
@@ -21,23 +21,24 @@ lane_centers = np.linspace(W_cells / (2*number_lanes),
                                    number_lanes).astype(int)
 
 # Vehicle properties
-mu_w1 = 0.5       # mean vehicle 1 width (m)
-sigma_w1 = 0.1  # std dev (m)
-w_min1 = 0.3
-w_max1 = 0.7
+mu_w1, sigma_w1 = 0.7, 0.05       # mean vehicle 1 width (m), std dev (m)
+w1_min, w1_max = 0.5, 0.9
 
-mu_w2 = 1.5       # mean vehicle 1 width (m)
-sigma_w2 = 0.1  # std dev (m)
-w_min2 = 1.3
-w_max2 = 1.7
+mu_w2,sigma_w2 = 1.7, 0.1      # mean vehicle 2 width (m), std dev (m)
+w2_min, w2_max = 1.5, 1.9
 
+p_vehicle_class = 0.0    # prob of vehicle being class 2 (wider)
 
 C_min = 0.2     # minimum clearance (m)
 Cmin_cells = int(ceil(C_min / cell_size))
 
 v_max = 5        # cells per tick
 p_slow = 0.1     # prob of random slow-down
-spawn_prob = 0.7 # prob of spawning a vehicle each time step at start
+spawn_prob = 0.3 # prob of spawning a vehicle each time step at start
+
+p_lateral_change = 0.0    # probability a vehicle will attempt a lateral shift this tick
+lateral_search_cells = int(lane_width/cell_size)  # how far (cells) to search left/right when attempting shift
+
 
 T = 1000         # time steps
 
@@ -45,10 +46,17 @@ T = 1000         # time steps
 # Utility functions
 # -----------------------------
 def draw_width_m():
+    if random.random() < p_vehicle_class:
+        # type 2 (cars)
+        mu, sigma, w_min, w_max = mu_w2, sigma_w2, w2_min, w2_max
+    else:
+        # type 1 (bikes)
+        mu, sigma, w_min, w_max = mu_w1, sigma_w1, w1_min, w1_max
+    
     # truncated normal
     while True:
-        w = (random.gauss(mu_w1, sigma_w1)) # + random.gauss(mu_w2, sigma_w2)
-        if w_min1 <= w <= w_max1:
+        w = (random.gauss(mu, sigma)) # 
+        if w_min <= w <= w_max:
             return w
 
 def width_to_cells(w_m):
@@ -67,13 +75,7 @@ class Vehicle:
         self.x_front = x_front  # front cell index (0 at start)
         self.speed = v_max
         self.y_center = random.choice(lane_centers)  + int(random.gauss(0, 2))
-
-        ## start centered laterally
-        ##self.y_center = W_cells // 2
-
-        # Random lateral starting position (respecting clearances)
-        #margin = Cmin_cells + width_to_cells(self.width_m) // 2
-        #self.y_center = random.randint(margin, W_cells - margin)
+        self.attempted_lateral_move = False
 
 
 
@@ -108,30 +110,6 @@ def place_vehicle_on_grid(grid, veh):
 def clear_vehicle_from_grid(grid, veh):
     grid[grid == veh.id] = -1
 
-def compute_next_state(grid, veh, L_cells, v_max, p_slow):
-    left, right = veh.lateral_bounds()
-    front_search = veh.x_front + 1
-    gap = 0
-
-    # --- check available empty space ahead ---
-    while front_search < L_cells and np.all(grid[front_search, left:right+1] == -1):
-        gap += 1
-        front_search += 1
-        if gap >= v_max:
-            break
-
-    # --- update speed based on NaSch logic ---
-    new_speed = min(veh.speed + 1, v_max, gap)
-    if random.random() < p_slow:
-        new_speed = max(0, new_speed - 1)
-
-    # --- compute next longitudinal position ---
-    new_x_front = min(L_cells - 1, veh.x_front + new_speed)
-
-    # (Optional: lateral logic if you simulate lane shifts)
-    new_y_center = veh.y_center  # or apply lateral drift logic
-
-    return new_x_front, new_y_center, new_speed
 
 
 # -----------------------------
@@ -164,22 +142,23 @@ def simulate(seed=0):
         # 2) longitudinal update: simple Nagel-Schreckenberg
         vehicles.sort(key=lambda V: V.x_front, reverse=True)  # update from frontmost to backmost
         # Step 1: Decide next states based on *current* grid
-
+        grid_snapshot = grid.copy()
         for veh in vehicles:
             # clear old position to test moves
             old_x = veh.x_front
+            veh.prev_x = old_x
+            veh.prev_y = veh.y_center
             old_left, old_right = veh.lateral_bounds()
             old_center = veh.y_center
             old_speed = veh.speed
-            clear_vehicle_from_grid(grid, veh)
+            veh.old_speed = old_speed
+            
+            #clear_vehicle_from_grid(grid_snapshot, veh)
 
             # compute gap to next vehicle ahead in same lane-band area: approximate by checking cells ahead within vehicle's lateral bounds
-
-            #left, right = veh.lateral_bounds()
-            #front_search = veh.x_front+1
             front_search = old_x+1
             gap = 0
-            while front_search < L_cells and np.all(grid[front_search, old_left:old_right+1] == -1):
+            while front_search < L_cells and np.all(grid_snapshot[front_search, old_left:old_right+1] == -1):
                 gap += 1
                 front_search += 1
                 if gap >= v_max:
@@ -190,18 +169,30 @@ def simulate(seed=0):
                 veh.speed = max(0, veh.speed - 1)
             # tentative x
             veh.x_front = min(L_cells-1, old_x + veh.speed)
+        # # 3) lateral decisions (simple local search ±2 cells)
 
-        # 3) lateral decisions (simple local search ±2 cells)
-
+            # require Cmin_cells clearance around the vehicle in both lateral and longitudinal directions
             left_bound = max(Cmin_cells + veh.w_cells//2, 0 + veh.w_cells//2)
             right_bound = min(W_cells - 1 - (veh.w_cells//2), W_cells-1 - Cmin_cells - veh.w_cells//2)
-            # search candidates
             best = old_center
             best_score = -1
-            for dy in range(-3,4):  # search window
+            # vehicle longitudinal span (rear .. front)
+            rear = max(0, veh.x_front - veh.length_cells + 1)
+            # check a longitudinal margin of Cmin_cells in front and behind
+            lon_min = max(0, rear - Cmin_cells)
+            lon_max = min(L_cells - 1, veh.x_front + Cmin_cells)
+
+            # decide whether this vehicle will attempt a lateral shift this tick
+            if random.random() < p_lateral_change:
+                search_range = lateral_search_cells
+                veh.attempted_lateral_move = True
+            else:
+                search_range = 4  # only evaluate staying in place
+
+            for dy in range(-search_range, search_range + 1):  # search window (may be 0)
                 cand = old_center + dy
-                if cand < 0 or cand >= W_cells: continue
-                # compute left/right clearances in cells
+                if cand < 0 or cand >= W_cells:
+                    continue
                 half = veh.w_cells // 2
                 if veh.w_cells % 2 == 1:
                     left = cand - half
@@ -209,46 +200,86 @@ def simulate(seed=0):
                 else:
                     left = cand - half
                     right = cand + half - 1
+                # enforce lateral margins to road edges
                 if left < Cmin_cells or right > W_cells - 1 - Cmin_cells:
                     continue
-                # compute clearance to nearest vehicle horizontally (scan neighbors)
-                # For speed, approximate by scanning in lateral direction at veh.x_front
-                row = grid[veh.x_front, :]
-                # find contiguous empty cells around cand covering veh.w_cells
-                if np.any(row[left:right+1] != -1):
+                # define lateral margin to check (include lateral clearance)
+                col_min = max(0, left - Cmin_cells)
+                col_max = min(W_cells - 1, right + Cmin_cells)
+                # check entire rectangle (lon_min..lon_max, col_min..col_max) for occupancy
+                subrect = grid_snapshot[lon_min:lon_max+1, col_min:col_max+1]
+                if subrect.size == 0:
+                    # occupied within clearance rectangle -> reject
                     continue
-                # score = min(clearance left, clearance right)
-                # clearance left
-                cleft = 0
-                j = left-1
-                while j >= 0 and row[j] == -1:
-                    cleft += 1; j -= 1
-                cright = 0
-                j = right+1
-                while j < W_cells and row[j] == -1:
-                    cright += 1; j += 1
-                score = (cleft + cright)/2 - abs(dy)  # prefer center and small moves
-                if score > best_score:
-                    best_score = score; best = cand
-            veh.y_center = best
+                # treat this vehicle's current cells as empty when evaluating candidates,
+                # but consider all other vehicles as occupied
+                tmp = subrect.copy()
+                tmp[tmp == veh.id] = -1
+                if np.any(tmp != -1):
+                    continue
+                # compute a score that prefers shifting into larger free lateral space and smaller moves
+                # also slightly prefer moves that reduce deviation from nearest lane center (optional)
+                cleft = left - col_min
+                cright = col_max - right
+                score = abs((cleft + cright) / 2 - abs(dy))
+                # break ties by preferring the smaller absolute dy (less abrupt)
+                if score > best_score or (score == best_score and abs(dy) < abs(best - old_center)):
+                    best_score = score
+                    best = cand
+            c_steps = abs(best - old_center)
+            step_size = 3 if (best > old_center and getattr(veh, "attempted_lateral_move")) else -3 if best < old_center else 0        
+            veh.y_center = old_center + step_size if c_steps >= step_size else best
+        
 
         # 4) place vehicles back onto grid (resolve conflicts by precedence of x_front descending)
         vehicles.sort(key=lambda V: V.x_front, reverse=True)
-        # survivors = []
-        # for veh in vehicles:
-        #     ok = place_vehicle_on_grid(grid, veh)
-        #     if ok:
-        #         survivors.append(veh)
-        #     else:
-        #         # collision/block: reduce speed and move back
-        #         veh.x_front = max(0, veh.x_front - veh.speed)
-        #         if place_vehicle_on_grid(grid, veh):
-        #             survivors.append(veh)
-        #         else:
-        #             # drop vehicle for now (rare)
-        #             pass
-        # vehicles = survivors
-
+ 
+        grid = empty_grid()
+        survivors = []
+        for veh in vehicles:
+            ok = place_vehicle_on_grid(grid, veh)
+            if ok:
+                survivors.append(veh)
+                continue
+            # collision at intended position -> try to stay at previous position (no forward progress)
+            # if prev_x not set for some reason, treat as can't place and drop
+            veh.attempted_lateral_move = False  # reset
+            prev = getattr(veh, "prev_x", None)
+            prev_y = getattr(veh, "prev_y", None)
+            prev_speed = getattr(veh, "old_speed", 0)
+            if prev is None:
+                # no previous position recorded -> drop vehicle (rare)
+                continue
+            else:
+                veh.y_center = prev_y
+                # optionally slow down a bit when forced to cancel lateral move
+                veh.speed = max(0, veh.speed - 1)
+                if place_vehicle_on_grid(grid, veh):
+                    veh.attempted_lateral_move = False
+                    survivors.append(veh)
+                    continue
+                # restore intended lateral for subsequent logic
+                veh.y_center = getattr(veh, "y_center", prev_y)
+            # revert to previous x (stay put) and zero forward speed    
+            veh.x_front = prev
+            for s in range(prev_speed, -1, -1):
+                veh.speed = s
+                if place_vehicle_on_grid(grid, veh):
+                    survivors.append(veh)
+                    placed = True
+                    break
+            # previous spot also blocked (others may have moved into it) -> try stepping back until placeable
+            # placed = False
+            # for x in range(prev-1, -1, -1):
+            #     veh.x_front = x
+            #     veh.speed = max(0, x - prev)  # will be 0 or negative; keep non-negative
+            #     if place_vehicle_on_grid(grid, veh):
+            #         survivors.append(veh)
+                    
+            # if not placed:
+            #     # couldn't find space -> drop vehicle (or keep it dropped for now)
+            #     pass
+        vehicles = survivors
         # 5) record metrics
         centers_this_step = [v.y_center for v in vehicles]
         lateral_centers.extend(centers_this_step)
@@ -258,9 +289,9 @@ def simulate(seed=0):
         # optionally remove vehicles at the end
         vehicles = [v for v in vehicles if v.x_front < L_cells-1]
         # clear and re-place for simplicity (already cleared earlier)
-        grid = empty_grid()
-        for v in vehicles:
-            place_vehicle_on_grid(grid, v)
+        # grid = empty_grid()
+        # for v in vehicles:
+        #     place_vehicle_on_grid(grid, v)
 
         lateral_centers_evol.append(centers_this_step)
         grid_history.append(grid.copy())
@@ -280,22 +311,30 @@ plt.plot(np.convolve(flows, np.ones(10)/10, mode='valid'))
 plt.title("Smoothed flow")
 plt.show()
 
+# determine vmax across all recorded frames so color mapping is stable
+##vmax = int(max(0, max(np.max(g) for g in grid_history)))
+norm = colors.Normalize(vmin=0, vmax=1) #v_max
 
 print([id(g) for g in grid_history[:5]])
 
 fig, ax = plt.subplots(figsize=(8,4))
 
 # Initialize display with the first frame
-im = ax.imshow(grid_history[0], cmap='viridis', origin='lower',
-               interpolation='nearest', vmin=-1)
+im = ax.imshow(grid_history[0].T, cmap='viridis', origin='lower',
+               interpolation='nearest',norm=norm ) # vmin = -1aspect='auto'
 
 ax.set_title("Traffic Simulation")
-ax.set_xlabel("Lateral position (y)")
-ax.set_ylabel("Longitudinal position (x)")
+ax.set_xlabel("Longitudinal position (x)")
+ax.set_ylabel("Lateral position (y)")
 
 # Animation update function
 def update(frame):
-    im.set_data(grid_history[frame])
+    im.set_data(grid_history[frame].T)
+    # if a later frame contains larger id values, expand the normalization
+    # cur_max = int(grid_history[frame].max())
+    # if cur_max > norm.vmax:
+    #     norm.vmax = cur_max
+    #     im.set_norm(norm)
     ax.set_title(f"Traffic Simulation (t = {frame})")
     return [im]
 
