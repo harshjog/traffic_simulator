@@ -36,7 +36,7 @@ v_max = 5        # cells per tick
 p_slow = 0.1     # prob of random slow-down
 spawn_prob = 0.3 # prob of spawning a vehicle each time step at start
 
-p_lateral_change = 0.0    # probability a vehicle will attempt a lateral shift this tick
+p_lateral_change = 0.2    # probability a vehicle will attempt a lateral shift this tick
 lateral_search_cells = int(lane_width/cell_size)  # how far (cells) to search left/right when attempting shift
 
 
@@ -330,11 +330,6 @@ ax.set_ylabel("Lateral position (y)")
 # Animation update function
 def update(frame):
     im.set_data(grid_history[frame].T)
-    # if a later frame contains larger id values, expand the normalization
-    # cur_max = int(grid_history[frame].max())
-    # if cur_max > norm.vmax:
-    #     norm.vmax = cur_max
-    #     im.set_norm(norm)
     ax.set_title(f"Traffic Simulation (t = {frame})")
     return [im]
 
