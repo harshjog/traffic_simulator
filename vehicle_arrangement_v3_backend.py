@@ -218,8 +218,7 @@ def simulate(seed=0):
 
                 veh.attempted_move_direction = -1 if best < old_center else 1 if best > old_center else 0
                 c_steps = abs(best - old_center)
-                #step_size = 3 if (best > old_center and getattr(veh, "attempted_lateral_move")) else -3
-                step_size = 5 if best > old_center else -5 if best < old_center else 0
+                step_size = lateral_speed if best > old_center else -1*lateral_speed if best < old_center else 0
                 veh.attempted_move_step_counter =  int(c_steps/step_size) if step_size !=0 else 0      
                 veh.y_center = old_center + step_size if c_steps >= step_size else best
                 old_center = veh.y_center
@@ -227,7 +226,7 @@ def simulate(seed=0):
             # if already attempting lateral move, continue stepping
             elif veh.attempted_lateral_move:
                 if veh.attempted_move_step_counter > 0:
-                    step_size = 3 if veh.attempted_move_direction == 1 else -3
+                    step_size = lateral_speed if veh.attempted_move_direction == 1 else -3
                     c_steps = abs(best - old_center)
                     attempted_y = old_center + step_size
                     if is_position_clear(grid, veh, attempted_y, lon_min, lon_max, Cmin_cells, W_cells):
