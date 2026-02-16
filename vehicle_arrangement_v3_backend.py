@@ -7,12 +7,17 @@ from matplotlib import colors
 from win32comext.adsi.demos.scp import verbose
 from vehicle_arrangement_v3_config import *
 
+# Module-level override for parameter sweeps
+_p_vehicle_class_override = None
 
 # -----------------------------
 # Utility functions
 # -----------------------------
 def draw_width_m():
-    if random.random() < p_vehicle_class:
+    # Use override if set, otherwise use config value
+    p_class = _p_vehicle_class_override if _p_vehicle_class_override is not None else p_vehicle_class
+    
+    if random.random() < p_class:
         # type 2 (cars)
         mu, sigma, w_min, w_max = mu_w2, sigma_w2, w2_min, w2_max
     else:
@@ -120,8 +125,15 @@ def clear_vehicle_from_grid(grid, veh):
 # -----------------------------
 # Simulation
 # -----------------------------
-def simulate(seed=0):
+def simulate(seed=0, p_lateral_change_override=None, p_vehicle_class_override=None):
+    global _p_vehicle_class_override
+    _p_vehicle_class_override = p_vehicle_class_override
+    
     random.seed(seed); np.random.seed(seed)
+    
+    # Use override if provided, otherwise use config value
+    p_lateral_change_val = p_lateral_change_override if p_lateral_change_override is not None else p_lateral_change
+    
     vehicles = []
     grid = empty_grid()
     flows = []
@@ -195,7 +207,7 @@ def simulate(seed=0):
             if veh.attempted_lateral_move == False:
                 # decide whether this vehicle will attempt a lateral shift this tick
                 p_attempt_move = random.random()
-                if p_attempt_move < p_lateral_change:
+                if p_attempt_move < p_lateral_change_val:
                     search_range = lateral_search_cells
                     veh.attempted_lateral_move = True
                 else:

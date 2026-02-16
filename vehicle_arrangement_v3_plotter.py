@@ -12,23 +12,41 @@ from vehicle_arrangement_v3_config import *
 # Run and plot
 # -----------------------------
 
-# sweep_p_lateral = np.logspace(-3, 0, 10)
-# orders = []
-# for p_lat in sweep_p_lateral:
-#     p_lateral_change = p_lat
-#     seed_sim = 42
-#     centers, flows, centers_evol, grid_history = simulate(seed_sim)
-#     order = order_entropy(centers, W_cells)
-#     orders.append(order)
+### This small snippet is to sweep over different parameters and look at the lane order.
 
-# plt.figure(figsize=(7,4))
-# plt.plot(sweep_p_lateral, orders, marker='o')
-# plt.xscale("log")
-# plt.xlabel("Discipline (probability of lateral change)")
-# plt.ylabel("Order (entropy-based)")
-# plt.title("Effect of vehicle discipline on lateral order")
-# plt.grid(True)
+# sweep_p_lateral = np.logspace(-3, 0, 10)
+# sweep_p_vehicle_class = [0.0, 0.25, 0.5, 0.75, 1.0]
+
+# fig, ax = plt.subplots(figsize=(10, 6))
+
+# # Use a colormap for different p_vehicle_class values
+# colors_list = plt.cm.viridis(np.linspace(0, 1, len(sweep_p_vehicle_class)))
+
+# for p_class, color in zip(sweep_p_vehicle_class, colors_list):
+#     orders = []
+#     for p_lat in sweep_p_lateral:
+#         seed_sim = 42
+#         centers, flows, centers_evol, grid_history = va.simulate(
+#             seed_sim, 
+#             p_lateral_change_override=p_lat,
+#             p_vehicle_class_override=p_class
+#         )
+#         order = va.order_entropy(centers, lane_centers)
+#         orders.append(order)
+    
+#     ax.plot(sweep_p_lateral, orders, marker='o', color=color, label=f'p_vehicle_class={p_class}', linewidth=2)
+
+# ax.set_xscale("log")
+# ax.set_xlabel("Discipline (probability of lateral change)", fontsize=12)
+# ax.set_ylabel("Order (RMS distance from lane centers)", fontsize=12)
+# ax.set_title("Effect of vehicle discipline and class on lateral order", fontsize=13)
+# ax.legend(loc='best')
+# ax.grid(True, alpha=0.3)
+# plt.tight_layout()
 # plt.show()    
+
+
+# ### Following code is good for looking at a single run in more detail. This include an animation of the traffic.
 
 seed_sim=random.randint(1,100)
 centers, flows, centers_evol, grid_history = va.simulate(seed_sim)
@@ -54,6 +72,9 @@ plt.show()
 plt.plot(np.convolve(flows, np.ones(10)/10, mode='valid'))
 plt.title("Smoothed flow")
 plt.show()
+
+
+
 
 # Animation of grid evolution
 norm = colors.Normalize(vmin=0, vmax=1) #v_max
