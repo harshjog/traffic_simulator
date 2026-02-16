@@ -443,4 +443,4 @@ def order_entropy(centers, lane_centers):
     max_rms = road_width / 2  # half road width as theoretical max
     
     # Normalize to 0-1
-    return float(np.clip(rms_distance / max_rms, 0, 1))
+    return float(1-np.clip(rms_distance / max_rms, 0, 1))
