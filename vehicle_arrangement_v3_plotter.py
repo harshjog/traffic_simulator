@@ -37,6 +37,7 @@ from vehicle_arrangement_v3_config import *
 #     ax.plot(sweep_p_lateral, orders, marker='o', color=color, label=f'p_vehicle_class={p_class}', linewidth=2)
 
 # ax.set_xscale("log")
+# ax.set_ylim(0.75,0.9)
 # ax.set_xlabel("Discipline (probability of lateral change)", fontsize=12)
 # ax.set_ylabel("Order (RMS distance from lane centers)", fontsize=12)
 # ax.set_title("Effect of vehicle discipline and class on lateral order", fontsize=13)
@@ -46,7 +47,7 @@ from vehicle_arrangement_v3_config import *
 # plt.show()    
 
 
-# ### Following code is good for looking at a single run in more detail. This include an animation of the traffic.
+### Following code is good for looking at a single run in more detail. This include an animation of the traffic.
 
 seed_sim=random.randint(1,100)
 centers, flows, centers_evol, grid_history = va.simulate(seed_sim)
@@ -79,6 +80,13 @@ plt.show()
 # Animation of grid evolution
 norm = colors.Normalize(vmin=0, vmax=1) #v_max
 
+# Toggle to save animation as GIF
+save_animation = True
+animation_filename = f"traffic_simulation_seed_{seed_sim}.gif"
+
+# Limit animation to first 200 frames
+max_frames = min(200, len(grid_history))
+
 #print([id(g) for g in grid_history[:5]])
 
 fig, ax = plt.subplots(figsize=(8,4))
@@ -104,7 +112,13 @@ def update(frame):
     return [im]
 
 # Create animation
-anim = animation.FuncAnimation(fig, update, frames=len(grid_history), interval=100, blit=False)
+anim = animation.FuncAnimation(fig, update, frames=max_frames, interval=100, blit=False)
+
+# Save animation if enabled
+if save_animation:
+    print(f"Saving animation to {animation_filename}...")
+    anim.save(animation_filename, writer='pillow', fps=10)
+    print(f"Animation saved successfully!")
 
 plt.show()
 

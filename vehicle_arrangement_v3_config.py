@@ -24,18 +24,18 @@ w2_min, w2_max = 1.5, 1.9
 
 p_vehicle_class = 1   # prob of vehicle being class 2 (wider)
 
-C_min = 0.1     # minimum clearance (m)
+C_min = 0.25     # minimum clearance (m)
 Cmin_cells = int(ceil(C_min / cell_size))
 
 v_max = 10        # cells per tick
 p_slow = 0.0     # prob of random slow-down
 spawn_prob = 0.3 # prob of spawning a vehicle each time step at start
 
-p_lateral_change = 0.001    # probability a vehicle will attempt a lateral shift this tick
+p_lateral_change = 0    # probability a vehicle will attempt a lateral shift this tick
 lateral_search_cells = int(lane_width/cell_size)  # how far (cells) to search left/right when attempting shift. 
 # As a matter of "discipline", should this be limited to 1 lane or some multiple of vehicle width?
 
-lateral_speed = 3 # how many cells to shift laterally when changing lanes
+lateral_speed = 7 # how many cells to shift laterally when changing lanes
 
 jitter = 2  # max lateral jitter (cells) when not attempting shift
 
